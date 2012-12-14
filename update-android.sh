@@ -10,7 +10,7 @@
 
 function show_usage() {
     echo "Usage:"
-    echo -e "\t`basename $0` [--serial|-s serial] [--partition|-p boot-partition] boot.tar.bz2-file"
+    echo -e "\t`basename $0` [--serial|-s serial] [--partition|-p boot-partition] <boot.tar.bz2|uImage|board.dtb|...>"
     echo -e "\t\tUpdate the kernel files in the boot partition of the specified"
     echo -e "\t\tandroid device with the specified boot.tar.bz2 file"
     echo ""
@@ -179,37 +179,50 @@ function update_modules(){
 }
 
 function update_kernel(){
-    kernel_dir=`mktemp -d /tmp/boot.XXX`
-    tar jxf ${file_path} -C ${kernel_dir}
-    if [ $? -ne 0 ]; then
-        echo "Failed to uncompress the boot file: ${file_path}"
-        exit 1
-    fi
-
     if [ -z "${boot_partition}" ]; then
         get_boot_partition
     fi
     adb shell mount -t vfat /dev/block/${boot_partition} ${mountpoint}
+
     kernel_org=`mktemp -u -d /tmp/boot.XXX`
     echo "Pull the original kernel files for backup in ${kernel_org}"
     adb pull ${mountpoint} ${kernel_org} &>/dev/null
 
-    echo "Push the new kernel files to boot partition ${boot_partition}"
-    adb push ${kernel_dir}/boot ${mountpoint} &>/dev/null
-    if [ $? -ne 0 ]; then
-        echo "Failed to push the kernel files"
-        rm -fr ${kernel_dir}
-        exit 1
+    file_basenmae=`basename ${file_path}`
+    if [ "X${file_basenmae}" == "Xboot.tar.bz2" ]; then
+        kernel_dir=`mktemp -d /tmp/boot.XXX`
+        tar jxf ${file_path} -C ${kernel_dir}
+        if [ $? -ne 0 ]; then
+            echo "Failed to uncompress the boot file: ${file_path}"
+            exit 1
+        fi
+
+        echo "Push the new kernel files to boot partition ${boot_partition}"
+        adb push ${kernel_dir}/boot ${mountpoint} &>/dev/null
+        if [ $? -ne 0 ]; then
+            echo "Failed to push the kernel files"
+            rm -fr ${kernel_dir}
+            exit 1
+        fi
+
+        verify_kernel ${kernel_dir}/boot ${mountpoint}
+        if [ $? -ne 0 ]; then
+            echo "Failed the update the kernel files."
+            echo "Please use the original files in ${kernel_org} to recovery manually"
+            rm -fr ${kernel_dir}
+            exit 1
+        fi
+    else
+        adb push "${file_path}" "${mountpoint}/${file_basenmae}"
+        verify_file "$file_path" "${mountpoint}"
+        if [ $? -ne 0 ]; then
+            echo "Failed the update the file: ${file_path}"
+            echo "Please use the original files in ${kernel_org} to recovery manually"
+            exit 1
+        fi
+
     fi
     adb shell sync
-
-    verify_kernel ${kernel_dir}/boot ${mountpoint}
-    if [ $? -ne 0 ]; then
-        echo "Failed the update the kernel files."
-        echo "Please use the original files in ${kernel_org} to recovery manually"
-        rm -fr ${kernel_dir}
-        exit 1
-    fi
     adb shell umount ${mountpoint}
     rm -fr ${kernel_dir} ${kernel_org}
     echo "Kernel updated successfully"
