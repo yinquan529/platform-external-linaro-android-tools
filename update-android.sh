@@ -92,21 +92,21 @@ function check_device_status(){
 
 function get_boot_partition(){
     product_device=`adb shell getprop ro.product.device|sed 's/\r//g'`
-    case "X${product_device}" in
-        "X" )
+    case "X${product_device}Y" in
+        "XY" )
             echo "Failed to get the value of ro.build.product property"
             exit 1
             ;;
-        "Xpandaboard" )
+        "XpandaboardY" )
             boot_partition="mmcblk0p1"
             ;;
-        "Xorigen" )
+        "XorigenY" )
             boot_partition="mmcblk0p2"
             ;;
-        "Xvexpress_a9" )
+        "Xvexpress_a9Y" )
             boot_partition="mmcblk0p1"
             ;;
-        "Xvexpress" )
+        "XvexpressY" )
             boot_partition="mmcblk0p1"
             ;;
         * )
@@ -114,6 +114,12 @@ function get_boot_partition(){
             exit 1
             ;;
     esac
+    adb shell ls "/dev/block/${boot_partition}"|grep "/dev/block/${boot_partition}" >&/dev/null
+    if [ $? -ne 0 ]; then
+        echo "Failed to get the boot partition of your device."
+        echo "Please specify the boot partition with the -p option."
+        exit 1
+    fi
 }
 
 function verify_kernel(){
@@ -156,6 +162,16 @@ function update_modules(){
     modules_org=`mktemp -u -d /tmp/modules.XXX`
     echo "Pull the original module files for backup in ${modules_org}"
     adb pull ${tgt_dir} ${modules_org} &>/dev/null
+    if [ $? -ne 0 ]; then
+        echo "Failed to pull the original module file from /system/modules of device($ANDROID_SERIAL)"
+        exit 1
+    fi
+
+    adb remount
+    if [ $? -ne 0 ]; then
+        echo "Faile to run [adb remount] for the device($ANDROID_SERIAL)."
+        exit 1
+    fi
 
     all_modules=`find ${file_path}/ -type f -name '*.ko'`
     OLD_LFS="${LFS}"
@@ -183,6 +199,11 @@ function update_kernel(){
         get_boot_partition
     fi
     adb shell mount -t vfat /dev/block/${boot_partition} ${mountpoint}
+    adb shell mount|grep "/dev/block/${boot_partition}" >&/dev/null
+    if [ $? -ne 0 ]; then
+        echo "Failed to mount the boot partion /dev/block/${boot_partition}"
+        exit 1
+    fi
 
     kernel_org=`mktemp -u -d /tmp/boot.XXX`
     echo "Pull the original kernel files for backup in ${kernel_org}"

@@ -120,6 +120,12 @@ function get_boot_partition(){
             exit 1
             ;;
     esac
+    adb shell ls "/dev/block/${boot_partition}"|grep "/dev/block/${boot_partition}" >&/dev/null
+    if [ $? -ne 0 ]; then
+        echo "Failed to get the boot partition of your device."
+        echo "Please specify the boot partition with the -p option."
+        exit 1
+    fi
 }
 
 function recreate_uinitrd(){
@@ -155,6 +161,11 @@ function update_uinitrd(){
         get_boot_partition
     fi
     adb shell mount -t vfat /dev/block/${boot_partition} ${mountpoint}
+    adb shell mount|grep "/dev/block/${boot_partition}" >&/dev/null
+    if [ $? -ne 0 ]; then
+        echo "Failed to mount the boot partion /dev/block/${boot_partition}"
+        exit 1
+    fi
 
     org_uinitrd=`mktemp -d /tmp/uinitrd.XXX`
     echo "Pull the original uInitrd file for backup in ${org_uinitrd}"
